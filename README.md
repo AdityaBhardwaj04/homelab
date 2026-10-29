@@ -51,13 +51,14 @@ flowchart TB
     wifi --- up
 ```
 
-I've intentionally left out IP addressing, management access details, and hardware identifiers.
+I've intentionally left out IP addressing, management access details, and hardware identifiers. The full walkthrough, including the trade-offs behind each choice, is in the [architecture overview](docs/architecture/overview.md).
 
 ## Projects
 
 | Project | Status | Summary |
 |---|---|---|
 | Proxmox host inventory | Documented | Read-only inventory of the hypervisor, VMs, storage, and networking: [docs/inventory.md](docs/inventory.md) |
+| Proxmox host configuration | Documented | Host, compute, storage, VM, and backup configuration, with the reasoning behind each: [infrastructure/proxmox](infrastructure/proxmox/README.md) |
 | Dockerized Apache with HTTPS | Completed (educational) | Apache in Docker with a custom page, a self-signed RSA certificate, and `mod_ssl`. Verified over HTTP and HTTPS, then published as [`hailmogambo9/contapache:2.0`](https://hub.docker.com/r/hailmogambo9/contapache). Full write-up coming in a later update. |
 
 ## What the lab can do today
@@ -97,6 +98,9 @@ In priority order, summarized from [docs/roadmap.md](docs/roadmap.md):
 ## Documentation
 
 - [docs/inventory.md](docs/inventory.md): hardware, hypervisor, VM, storage, and network inventory (October 29, 2026 snapshot)
+- [docs/architecture/overview.md](docs/architecture/overview.md): topology diagram and design trade-offs
+- [docs/networking/overview.md](docs/networking/overview.md): bridge and uplink, the unverified egress path, firewall state at the snapshot, and segmentation plans
+- [infrastructure/proxmox/README.md](infrastructure/proxmox/README.md): Proxmox host configuration, storage layout, VMs, and backup and recovery
 - [docs/roadmap.md](docs/roadmap.md): prioritized improvements and the reasoning behind each one
 
 ## A note on what's published here
