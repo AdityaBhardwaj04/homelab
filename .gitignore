@@ -1,0 +1,60 @@
+# --- Secrets and credentials -------------------------------------------------
+# Nothing in this repository should ever need a real secret. These patterns are
+# a safety net, not a substitute for reviewing what gets staged.
+.env
+.env.*
+!.env.example
+*.secret
+*secret*.txt
+credentials*
+*.token
+
+# Private keys and certificate bundles
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.csr
+*.srl
+id_rsa*
+id_ecdsa*
+id_ed25519*
+!*.pub
+
+# Docker client config (holds `docker login` credentials)
+.docker/
+**/.docker/config.json
+
+# Locally generated TLS material for project builds
+**/certs/
+**/ssl/*.crt
+
+# --- Large or generated artifacts ---------------------------------------------
+*.iso
+*.img
+*.qcow2
+*.vmdk
+*.vma
+*.vma.*
+*.tar
+*.tar.gz
+*.tgz
+*.zst
+
+# --- Logs, caches, temporary files --------------------------------------------
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+tmp/
+.cache/
+
+# --- OS and editor files ------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
