@@ -1,0 +1,6 @@
+# Allowlist: only what the Dockerfile copies is sent to the build.
+# This keeps certs/, keys, and anything else local out of the build context.
+*
+!conf/
+!htdocs/
+!docker-entrypoint.sh

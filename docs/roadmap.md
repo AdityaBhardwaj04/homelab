@@ -16,7 +16,7 @@ Before starting most items, I need to re-check the current state, because the in
 | 6 | [Right-size memory for VM 101](#6-right-size-memory-for-vm-101) | Medium | Planned |
 | 7 | [Enable the QEMU guest agent](#7-enable-the-qemu-guest-agent) | Medium | Planned |
 | 8 | [Clean up the attached ISO and stale shell session](#8-clean-up-the-attached-iso-and-stale-shell-session) | Low | Planned |
-| 9 | [Reproducible build for the Apache HTTPS project](#9-reproducible-build-for-the-apache-https-project) | Medium | Planned |
+| 9 | [Reproducible build for the Apache HTTPS project](#9-reproducible-build-for-the-apache-https-project) | Medium | In progress: written, but build and tests not yet run |
 | 10 | [Monitoring, logging, scanning, and automation](#10-monitoring-logging-scanning-and-automation) | Ongoing | Planned |
 
 ---
@@ -107,7 +107,9 @@ I'll only publish a summary of the policy here, not the full ruleset.
 
 **Why:** I built the original image interactively and captured it with `docker commit`. That works, but nobody can rebuild it or audit it from source.
 
-**Plan:** Replace the manual process with a Dockerfile and explicit Apache configuration. The certificate is generated at build or run time and never committed. Then document the differences from the original process.
+**Plan:** Replace the manual process with a Dockerfile and explicit Apache configuration. The certificate is generated at run time and never committed. Then document the differences from the original process.
+
+**Progress (October 29, 2026):** I've written the Dockerfile, the configuration and a smoke test in [projects/apache-https](../projects/apache-https/README.md). Certificate generation and TLS validation were tested locally with OpenSSL. The Docker build, `httpd -t`, the container runtime, and the smoke test have **not** been run yet. This item is done when they pass on a Docker host.
 
 ## 10. Monitoring, logging, scanning, and automation
 

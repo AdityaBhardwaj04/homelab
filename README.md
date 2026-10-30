@@ -59,7 +59,7 @@ I've intentionally left out IP addressing, management access details, and hardwa
 |---|---|---|
 | Proxmox host inventory | Documented | Read-only inventory of the hypervisor, VMs, storage, and networking: [docs/inventory.md](docs/inventory.md) |
 | Proxmox host configuration | Documented | Host, compute, storage, VM, and backup configuration, with the reasoning behind each: [infrastructure/proxmox](infrastructure/proxmox/README.md) |
-| Dockerized Apache with HTTPS | Completed (educational) | Apache in Docker with a custom page, a self-signed RSA certificate, and `mod_ssl`. Verified over HTTP and HTTPS, then published as [`hailmogambo9/contapache:2.0`](https://hub.docker.com/r/hailmogambo9/contapache). Full write-up coming in a later update. |
+| [Dockerized Apache with HTTPS](projects/apache-https/README.md) | Original completed (educational); reproducible build written, but build and tests not yet run | Apache in Docker with a custom page, a self-signed RSA certificate, and `mod_ssl`. Verified over HTTP and HTTPS, then published as [`hailmogambo9/contapache:2.0`](https://hub.docker.com/r/hailmogambo9/contapache). The case study covers what ended up inside that `docker commit` image and a reproducible, non-root Dockerfile rebuild. |
 
 ## What the lab can do today
 
@@ -101,6 +101,7 @@ In priority order, summarized from [docs/roadmap.md](docs/roadmap.md):
 - [docs/architecture/overview.md](docs/architecture/overview.md): topology diagram and design trade-offs
 - [docs/networking/overview.md](docs/networking/overview.md): bridge and uplink, the unverified egress path, firewall state at the snapshot, and segmentation plans
 - [infrastructure/proxmox/README.md](infrastructure/proxmox/README.md): Proxmox host configuration, storage layout, VMs, and backup and recovery
+- [projects/apache-https/README.md](projects/apache-https/README.md): Dockerized Apache HTTPS case study and reproducible build
 - [docs/roadmap.md](docs/roadmap.md): prioritized improvements and the reasoning behind each one
 
 ## A note on what's published here

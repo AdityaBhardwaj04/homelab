@@ -1,0 +1,4 @@
+# Shell scripts and the Dockerfile must keep LF endings to run inside Linux containers.
+*.sh       text eol=lf
+Dockerfile text eol=lf
+*.conf     text eol=lf
