@@ -2,9 +2,11 @@
 
 This page covers the lab network at a high level. It's based on the **October 29, 2026 inventory snapshot** ([inventory.md](../inventory.md#5-networking)).
 
+**Case study:** [Proxmox on Wi-Fi, NAT, the VM firewall, and conntrack zones](proxmox-wifi-nat-firewall-conntrack.md). It documents the host's verified NAT configuration, why enabling the per-VM firewall broke guest internet access, the conntrack-zone fix, and a troubleshooting runbook.
+
 For a public repository, I deliberately leave out:
 
-- IP addresses and subnets
+- IP addresses and subnets, except the internal guest network (`10.10.10.0/24`, gateway `10.10.10.1`), which is documented in the [case study](proxmox-wifi-nat-firewall-conntrack.md)
 - VPN or overlay addresses
 - MAC addresses
 - interface hardware details
@@ -44,6 +46,8 @@ flowchart LR
 ## What I've inferred but not verified
 
 ### Guest egress path
+
+> **Update (October 29, 2026):** the host's network configuration has since been inspected. Guests are routed and NATed (`MASQUERADE`) out through the Wi-Fi interface, as hypothesised below. See the [case study](proxmox-wifi-nat-firewall-conntrack.md#4-private-subnet-gateway-nat-and-dns). The text below is kept as originally written.
 
 `vmbr0` has no physical port, and the host's physical uplink is Wi-Fi.
 

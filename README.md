@@ -100,10 +100,11 @@ In priority order, summarized from [docs/roadmap.md](docs/roadmap.md):
 - [docs/inventory.md](docs/inventory.md): hardware, hypervisor, VM, storage, and network inventory (October 29, 2026 snapshot)
 - [docs/architecture/overview.md](docs/architecture/overview.md): topology diagram and design trade-offs
 - [docs/networking/overview.md](docs/networking/overview.md): bridge and uplink, the unverified egress path, firewall state at the snapshot, and segmentation plans
+- [docs/networking/proxmox-wifi-nat-firewall-conntrack.md](docs/networking/proxmox-wifi-nat-firewall-conntrack.md): case study on Wi-Fi NAT, the per-VM firewall, conntrack zones, and a troubleshooting runbook
 - [infrastructure/proxmox/README.md](infrastructure/proxmox/README.md): Proxmox host configuration, storage layout, VMs, and backup and recovery
 - [projects/apache-https/README.md](projects/apache-https/README.md): Dockerized Apache HTTPS case study and reproducible build
 - [docs/roadmap.md](docs/roadmap.md): prioritized improvements and the reasoning behind each one
 
 ## A note on what's published here
 
-This is a public repository, so I keep it sanitized. It contains no private or overlay-VPN IP addresses, MAC addresses, serial numbers, credentials, private keys, or step-by-step management access details. Where something is a historical observation rather than current state, I say so.
+This is a public repository, so I keep it sanitized. It contains no private or overlay-VPN IP addresses (other than the internal guest network `10.10.10.0/24`, which is documented deliberately), no MAC addresses, serial numbers, credentials, private keys, or step-by-step management access details. Where something is a historical observation rather than current state, I say so.
