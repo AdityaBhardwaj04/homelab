@@ -51,7 +51,7 @@ flowchart TB
 | Guest egress path | IP forwarding + `MASQUERADE` through Wi-Fi; `dnsmasq` for DHCP/DNS | **Verified** |
 | Firewall | Datacenter firewall enabled (input DROP, management allow-list); per-VM isolation policies | **Verified** (VM 101 rules present; not yet tested from inside the VM) |
 | Remote management | Overlay VPN with an explicit, tested allow-list; SSH key-only | **Verified** |
-| Backups | None verified | Gap |
+| Backups | Weekly, manual, to an offline external SSD; verified; restore tested Oct 30 | **Verified** |
 
 ## Design decisions and trade-offs
 
@@ -137,7 +137,9 @@ More detail is in [networking/overview.md](../networking/overview.md).
 
 **Why it matters more here than usual:** With one disk and no recovery points, a disk failure, a bad upgrade, or a mistake inside a guest would be unrecoverable. It also blocks the Proxmox 8 → 9 upgrade, because the official upgrade guide requires a valid, tested backup first.
 
-**Direction:** Back up to a target that isn't on this NVMe, then prove a restore works. This is [roadmap item 1](../roadmap.md#1-establish-backups-and-test-recovery). The details are in [infrastructure/proxmox/README.md](../../infrastructure/proxmox/README.md#backup-and-recovery).
+**Update (October 30, 2026):** both VMs are now backed up to an external SSD that stays offline between runs, and a restore has been tested ([write-up](../backup/2026-10-30-backups-and-restore-test.md)). What's left is a second copy in a different location, and backing up the host configuration.
+
+**Original direction:** Back up to a target that isn't on this NVMe, then prove a restore works. This is [roadmap item 1](../roadmap.md#1-establish-backups-and-test-recovery). The details are in [infrastructure/proxmox/README.md](../../infrastructure/proxmox/README.md#backup-and-recovery).
 
 ## What this architecture is and isn't
 
@@ -150,6 +152,6 @@ More detail is in [networking/overview.md](../networking/overview.md).
 - The network wasn't segmented.
 - No backups were visible.
 
-By that evening, the firewall was enforced, the guests were isolated from each other, the host, and the home LAN, and remote access was locked down to an explicit allow-list with key-only SSH ([write-up](../hardening/2026-10-29-access-and-network-hardening.md)). **The end-of-life hypervisor and the lack of tested backups are still open**, and they're the next priorities.
+By that evening, the firewall was enforced, the guests were isolated from each other, the host, and the home LAN, and remote access was locked down to an explicit allow-list with key-only SSH ([write-up](../hardening/2026-10-29-access-and-network-hardening.md)). On October 30, verified backups and a tested restore followed. **The end-of-life hypervisor is still open**, and it's the next priority.
 
 I'm documenting these gaps on purpose. Closing them is the point of the [roadmap](../roadmap.md).

@@ -269,4 +269,4 @@ Verified from command output on the host and in the guests on the **evening of O
 | Kali SSH | Not visible from the dashboard | Dedicated key only; password and root login disabled |
 | Kali guest OS | Unknown | Kernel `7.1.5+kali-amd64` |
 | VM 101 | 1 vCPU / 1 GiB / 8 GiB, Debian 13 ISO attached, firewall flag on | **Destroyed and rebuilt:** minimal Debian 13 (no desktop), kernel `6.12.113+deb13-amd64`, firewall flag on, firewall rules file present on the host, 1 vCPU / 2 GiB / 16 GiB (verified Oct 30) |
-| Backups | None visible | Unchanged. A Kali backup exists on an external drive, but it hasn't been restore-tested, so I'm not counting it as a verified recovery point yet |
+| Backups | None visible | Unchanged on Oct 29. **On Oct 30:** verified backups of both VMs on an offline external drive, and a Kali restore tested ([write-up](backup/2026-10-30-backups-and-restore-test.md)) |

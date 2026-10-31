@@ -205,7 +205,23 @@ At the snapshot there were no recovery points of any kind. Combined with a singl
 3. Back up host configuration too.
 4. Test a restore.
 
-This is [roadmap item 1](../../docs/roadmap.md#1-establish-backups-and-test-recovery). It's planned, not done.
+This is [roadmap item 1](../../docs/roadmap.md#1-establish-backups-and-test-recovery).
+
+### Update: October 30, 2026
+
+| Recovery mechanism | State |
+|---|---|
+| Backup target | `pve-backup`: directory storage on an ext4 partition of an external USB SSD, mounted only while backing up |
+| Missing-drive safeguard | `is_mountpoint` set, so the storage goes offline instead of writing to the host's disk |
+| Retention | `keep-last=3` per VM |
+| VM 100 / VM 101 backups | Verified (`zstd -t`): 39.6 GB and 1.0 GB archives |
+| Restore test | Kali restored to a temporary, network-disconnected VM, booted with data intact, then deleted |
+| Routine | Weekly and manual, via [`scripts/homelab-backup`](scripts/homelab-backup) (not yet run end-to-end) |
+| Alerts | Email through an authenticated SMTP relay; test received |
+| Host configuration backup | Not yet |
+| Second copy elsewhere | Not yet |
+
+Details: [backups and restore test](../../docs/backup/2026-10-30-backups-and-restore-test.md).
 
 ## Other observations
 
@@ -220,4 +236,4 @@ This host works well as a learning platform. It isn't production-ready. At the d
 - The network wasn't segmented.
 - No backups were visible.
 
-By the evening of October 29, the firewall was enforced, the guests were isolated, and remote access was locked to an explicit allow-list with key-only SSH. **The end-of-life release and the lack of tested backups are still open.** These gaps are what the [roadmap](../../docs/roadmap.md) is for.
+By the evening of October 29, the firewall was enforced, the guests were isolated, and remote access was locked to an explicit allow-list with key-only SSH. On October 30, verified backups and a tested restore followed. **The end-of-life release is still open.** These gaps are what the [roadmap](../../docs/roadmap.md) is for.

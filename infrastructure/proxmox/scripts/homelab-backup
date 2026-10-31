@@ -1,0 +1,86 @@
+#!/bin/bash
+# homelab-backup - back up Proxmox VMs to the external "pve-backup" SSD.
+#
+#   homelab-backup              # back up VMs 100 and 101 (snapshot mode), verify, eject
+#   homelab-backup --stop       # use stop mode (cleanest; VMs shut down briefly)
+#   homelab-backup --no-eject   # leave the drive mounted afterwards
+#
+# Retention (keep-last=3) is set on the "pve-backup" storage, so old backups
+# are pruned automatically by vzdump.
+set -euo pipefail
+
+VMIDS="100 101"
+MODE="snapshot"
+EJECT=1
+LABEL="pve-backup"
+MNT="/mnt/pve-backup"
+STORAGE="pve-backup"
+LOG="/var/log/homelab-backup.log"
+
+for arg in "$@"; do
+    case "$arg" in
+        --stop)     MODE="stop" ;;
+        --no-eject) EJECT=0 ;;
+        -h|--help)  sed -n '2,9p' "$0"; exit 0 ;;
+        *) echo "unknown option: $arg" >&2; exit 2 ;;
+    esac
+done
+
+[ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 1; }
+
+# Only one run at a time.
+exec 9>/run/homelab-backup.lock
+flock -n 9 || { echo "another backup is already running" >&2; exit 1; }
+
+exec > >(tee -a "$LOG") 2>&1
+echo "===== $(date '+%F %T') homelab-backup start (mode=$MODE, vms=$VMIDS)"
+
+# 1. The right drive must be present (matched by filesystem label, not /dev/sdX).
+DEV="/dev/disk/by-label/$LABEL"
+[ -e "$DEV" ] || { echo "ERROR: backup SSD (label $LABEL) not connected - nothing done"; exit 1; }
+PART="$(readlink -f "$DEV")"
+DISK="$(lsblk -no PKNAME "$PART")"
+
+# 2. Mount it if needed, and confirm it is really mounted (never write to pve's own disk).
+mountpoint -q "$MNT" || mount "$MNT"
+mountpoint -q "$MNT" || { echo "ERROR: $MNT is not a mountpoint - aborting"; exit 1; }
+pvesm status --storage "$STORAGE" | grep -q active || { echo "ERROR: storage $STORAGE not active"; exit 1; }
+df -h "$MNT" | tail -1
+
+cleanup() {
+    sync
+    if [ "$EJECT" -eq 1 ] && mountpoint -q "$MNT"; then
+        umount "$MNT" && echo 1 > "/sys/block/$DISK/device/delete" \
+            && echo "Drive unmounted and ejected - safe to unplug." \
+            || echo "WARNING: could not unmount/eject $MNT - check before unplugging"
+    fi
+}
+trap cleanup EXIT
+
+# 3. Back up.
+START=$(date +%s)
+vzdump $VMIDS --storage "$STORAGE" --mode "$MODE" --compress zstd || {
+    echo "ERROR: vzdump reported a failure - see above"; exit 1; }
+
+# 4. Verify the archive each VM just produced.
+FAIL=0
+for id in $VMIDS; do
+    f="$(find "$MNT/dump" -name "vzdump-qemu-$id-*.vma.zst" -newermt "@$START" | sort | tail -1)"
+    if [ -z "$f" ]; then
+        echo "VM $id: NO NEW ARCHIVE FOUND"; FAIL=1; continue
+    fi
+    if zstd -q -t "$f"; then
+        echo "VM $id: OK  $(du -h "$f" | cut -f1)  $(basename "$f")"
+    else
+        echo "VM $id: ARCHIVE FAILED VERIFICATION  $(basename "$f")"; FAIL=1
+    fi
+done
+
+echo "Backups on drive now:"
+find "$MNT/dump" -name "*.vma.zst" -printf "%f\n" | sort
+df -h "$MNT" | tail -1
+
+if [ "$FAIL" -ne 0 ]; then
+    echo "===== RESULT: FAILED - do not rely on this run"; exit 1
+fi
+echo "===== $(date '+%F %T') RESULT: all backups completed and verified"

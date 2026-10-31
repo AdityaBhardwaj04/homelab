@@ -62,6 +62,7 @@ I've intentionally left out IP addressing, management access details, and hardwa
 |---|---|---|
 | Proxmox host inventory | Documented | Read-only inventory of the hypervisor, VMs, storage, and networking: [docs/inventory.md](docs/inventory.md) |
 | Proxmox host configuration | Documented | Host, compute, storage, VM, firewall, and backup configuration, with the reasoning behind each: [infrastructure/proxmox](infrastructure/proxmox/README.md) |
+| [Backups and restore test](docs/backup/2026-10-30-backups-and-restore-test.md) | Completed Oct 30, 2026 (a few follow-ups open) | Offline, ext4-formatted external backup drive; verified backups of both VMs; a Kali restore tested in an isolated VM; email alerts; a backup script. |
 | [Access and network hardening](docs/hardening/2026-10-29-access-and-network-hardening.md) | Completed Oct 29, 2026 (a few follow-ups open) | Found that the overlay VPN bypassed the Proxmox firewall and that Kali could reach my home LAN. Locked down remote access, isolated the VMs, made SSH key-only, and debugged a NAT/firewall conntrack issue that broke guest internet access along the way. |
 | [Dockerized Apache with HTTPS](projects/apache-https/README.md) | Original completed (educational); reproducible build written, but build and tests not yet run | Apache in Docker with a custom page, a self-signed RSA certificate, and `mod_ssl`. Verified over HTTP and HTTPS, then published as [`hailmogambo9/contapache:2.0`](https://hub.docker.com/r/hailmogambo9/contapache). The case study covers what ended up inside that `docker commit` image and a reproducible, non-root Dockerfile rebuild. |
 
@@ -76,9 +77,9 @@ I've intentionally left out IP addressing, management access details, and hardwa
 
 These are the open gaps as of **October 29, 2026**. They drive the [roadmap](docs/roadmap.md).
 
-- **No tested backups.** The dashboard showed no backup jobs, archives, snapshots, or off-host target. A Kali backup exists on an external drive, but until I've test-restored it, I don't count it.
+- **Backups are weekly, manual and in one location.** Both VMs are backed up to an external SSD that stays offline between runs, and a restore has been tested. But up to a week of changes can be lost, and there's no second copy elsewhere ([backup write-up](docs/backup/2026-10-30-backups-and-restore-test.md)).
 - **Single point of failure.** The host OS and every VM disk sit on one NVMe drive.
-- **End-of-life hypervisor.** Proxmox VE 8 reached end of life in August 2026 according to the official Proxmox FAQ. The host still runs 8.4, and I won't upgrade until backups are tested.
+- **End-of-life hypervisor.** Proxmox VE 8 reached end of life in August 2026 according to the official Proxmox FAQ. The host still runs 8.4. With tested backups now in place, the upgrade is the next priority.
 - **Overlay traffic bypasses the host firewall.** The overlay VPN's own firewall chain runs first, so its access policy is the only control on that path. The policy is now an explicit, tested allow-list, but it's a single layer.
 - **Some hardening not yet re-verified.** The persisted network rules haven't been through a reboot yet, and the rebuilt Docker VM's firewall rules are in place but haven't been tested from inside the VM yet.
 - **Limited guest visibility.** The QEMU guest agent isn't configured, so Proxmox can't report guest IPs or OS details.
@@ -86,11 +87,13 @@ These are the open gaps as of **October 29, 2026**. They drive the [roadmap](doc
 
 Fixed on October 29, 2026: the firewall is now enforced, the guests are segmented, and remote access and SSH are locked down. See the [hardening write-up](docs/hardening/2026-10-29-access-and-network-hardening.md).
 
+Fixed on October 30, 2026: both VMs have verified backups on an offline drive, a restore has been tested, and Proxmox alerts are delivered by email. See the [backup write-up](docs/backup/2026-10-30-backups-and-restore-test.md).
+
 ## Roadmap
 
 In priority order, summarized from [docs/roadmap.md](docs/roadmap.md):
 
-1. Establish reliable backups and test a restore.
+1. ~~Establish reliable backups and test a restore.~~ Done Oct 30, 2026 (host-config backup still open).
 2. Plan a supported upgrade path off Proxmox VE 8.
 3. ~~Review firewall policy without locking myself out.~~ Done Oct 29, 2026.
 4. ~~Verify routing/NAT and segment security-testing VMs from service VMs.~~ Done Oct 29, 2026.
@@ -109,6 +112,7 @@ In priority order, summarized from [docs/roadmap.md](docs/roadmap.md):
 - [docs/networking/overview.md](docs/networking/overview.md): bridge, NAT and uplink, management access summary, host and per-VM firewall policy, and segmentation decision
 - [docs/networking/proxmox-wifi-nat-firewall-conntrack.md](docs/networking/proxmox-wifi-nat-firewall-conntrack.md): case study on Wi-Fi NAT, the per-VM firewall, conntrack zones, and a troubleshooting runbook
 - [docs/hardening/2026-10-29-access-and-network-hardening.md](docs/hardening/2026-10-29-access-and-network-hardening.md): findings, fixes, the NAT/conntrack incident, verification results, and lessons learned
+- [docs/backup/2026-10-30-backups-and-restore-test.md](docs/backup/2026-10-30-backups-and-restore-test.md): backup target design, first backups, verification, restore test, and email alerts
 - [infrastructure/proxmox/README.md](infrastructure/proxmox/README.md): Proxmox host configuration, storage layout, VMs, and backup and recovery
 - [projects/apache-https/README.md](projects/apache-https/README.md): Dockerized Apache HTTPS case study and reproducible build
 - [docs/roadmap.md](docs/roadmap.md): prioritized improvements and the reasoning behind each one

@@ -8,7 +8,7 @@ Before starting most items, I need to re-check the current state, because the in
 
 | # | Item | Priority | Status |
 |---|---|---|---|
-| 1 | [Establish backups and test recovery](#1-establish-backups-and-test-recovery) | Critical | Planned |
+| 1 | [Establish backups and test recovery](#1-establish-backups-and-test-recovery) | Critical | **Done** (Oct 30, 2026), except host-config backup |
 | 2 | [Plan a supported Proxmox upgrade](#2-plan-a-supported-proxmox-upgrade) | High | Planned |
 | 3 | [Review firewall policy safely](#3-review-firewall-policy-safely) | High | **Done** (Oct 29, 2026), with follow-ups in item 11 |
 | 4 | [Verify routing/NAT and segment the network](#4-verify-routingnat-and-segment-the-network) | High | **Done** (Oct 29, 2026): NAT verified; guests isolated with per-VM firewalls |
@@ -36,6 +36,15 @@ Before starting most items, I need to re-check the current state, because the in
 
 **Done when:** Both VMs have regular off-host backups, and I've completed and documented at least one test restore.
 
+**Done (October 30, 2026).** Write-up: [backups and restore test](backup/2026-10-30-backups-and-restore-test.md).
+
+- Target: an ext4 partition on an external USB SSD, mounted only while backing up, with Proxmox's `is_mountpoint` safeguard and `keep-last=3` retention.
+- Both VMs were backed up and verified with `zstd -t`.
+- The Kali backup was restored to a temporary VM with its network disconnected, booted with its data intact, then deleted.
+- Proxmox notifications are now delivered by email.
+
+Still open: backing up the host configuration (step 4), a first end-to-end run of the backup script, and a second copy in another location.
+
 ## 2. Plan a supported Proxmox upgrade
 
 **Why:** The host runs Proxmox VE 8.4.21. According to the [official Proxmox FAQ](https://pve.proxmox.com/wiki/FAQ) (checked October 29, 2026), Proxmox VE 8 reached end of life in August 2026, a month after its Debian 12 base. The current release line is Proxmox VE 9 (Debian 13), with 9.2 as the latest at the time of checking.
@@ -55,7 +64,7 @@ Before starting most items, I need to re-check the current state, because the in
 
 **Lab-specific risk:** The host's only physical uplink is Wi-Fi, and I may be managing it over a VPN. If networking breaks during the upgrade, I could lose remote access. I'll plan to do this at the machine and record the network configuration beforehand.
 
-**Done when:** I've chosen and documented an approach, finished the prerequisites, completed the upgrade during a planned window, and verified the guests afterwards. **I won't upgrade before item 1 is done.**
+**Done when:** I've chosen and documented an approach, finished the prerequisites, completed the upgrade during a planned window, and verified the guests afterwards. **I won't upgrade before item 1 is done.** (Item 1 was completed on October 30, 2026, so this is now unblocked. I'll take a fresh backup immediately before upgrading.)
 
 ## 3. Review firewall policy safely
 
