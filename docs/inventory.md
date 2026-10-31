@@ -5,6 +5,8 @@
 
 > **Read this as a historical record.** Resource usage, VM status, uptime, and software versions change over time. Nothing below should be taken as the current state unless it's been re-verified and re-dated.
 
+> **Update, evening of October 29, 2026:** Several items below have since been verified or changed: the guest egress path (now verified NAT), the firewall (now enabled and enforced per VM), SSH settings, and VM 101 (destroyed and rebuilt). The changes are listed in [Changes since the snapshot](#changes-since-the-snapshot), and the full story is in the [access and network hardening write-up](hardening/2026-10-29-access-and-network-hardening.md). I've left the sections below exactly as observed so the record stays honest.
+
 Each section separates:
 
 - **Observed:** shown directly in the Proxmox dashboard on the snapshot date.
@@ -249,3 +251,22 @@ Everything in this table reflects the October 29, 2026 snapshot, not verified cu
 | Network | One unsegmented bridge, Wi-Fi uplink, routing path unverified |
 | Firewall | Datacenter firewall disabled, no rules |
 | Backups | **None visible** |
+
+---
+
+## Changes since the snapshot
+
+Verified from command output on the host and in the guests on the **evening of October 29, 2026**. Details: [access and network hardening](hardening/2026-10-29-access-and-network-hardening.md).
+
+| Area | Snapshot (earlier Oct 29) | After the evening session |
+|---|---|---|
+| Guest egress | Routing/NAT inferred, unverified | **Verified:** internal bridge on a private /24, IP forwarding on, `MASQUERADE` out through Wi-Fi, `dnsmasq` for guest DHCP and DNS |
+| Datacenter firewall | Disabled, no rules | Enabled, input DROP, management ports allowed only from my admin laptop |
+| Overlay VPN | Inferred from its repository | Verified running on the host and on Kali. Its access policy changed from allow-all to an explicit, tested allow-list |
+| VM 100 `Kali` firewall flag | Off | **On**, with an isolation policy: internet only; no host, no home LAN, no other guests |
+| NAT with VM firewalls | — | Fixed: conntrack-zone rule for firewall bridges, persisted in the network config |
+| Host SSH | Not visible from the dashboard | Root key-only (explicit), password authentication off |
+| Kali SSH | Not visible from the dashboard | Dedicated key only; password and root login disabled |
+| Kali guest OS | Unknown | Kernel `7.1.5+kali-amd64` |
+| VM 101 | 1 vCPU / 1 GiB / 8 GiB, Debian 13 ISO attached, firewall flag on | **Destroyed and rebuilt:** minimal Debian 13 (no desktop), kernel `6.12.113+deb13-amd64`, firewall flag on, firewall rules file present on the host, 1 vCPU / 2 GiB / 16 GiB (verified Oct 30) |
+| Backups | None visible | Unchanged. A Kali backup exists on an external drive, but it hasn't been restore-tested, so I'm not counting it as a verified recovery point yet |

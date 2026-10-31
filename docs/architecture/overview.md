@@ -1,6 +1,6 @@
 # Architecture Overview
 
-This page describes how the lab fits together and why it's built this way. It's based on the **October 29, 2026 inventory snapshot** ([inventory.md](../inventory.md)). Anything that may have changed since then is labelled as a snapshot observation, not current state.
+This page describes how the lab fits together and why it's built this way. It's based on the **October 29, 2026 inventory snapshot** ([inventory.md](../inventory.md)), updated with what I verified and changed during the [access and network hardening session](../hardening/2026-10-29-access-and-network-hardening.md) that evening. Where the two differ, I say which is which.
 
 How to read this page:
 
@@ -12,7 +12,7 @@ I've deliberately left out IP addresses, VPN details, MAC addresses, disk serial
 
 ## Topology
 
-Solid lines are relationships I observed in the Proxmox configuration. **The dashed line is unverified.** I believe guest traffic leaves the host through Wi-Fi via routing or NAT, but I haven't confirmed that from the host's network configuration.
+All lines are relationships I've verified. The guest egress path (bridge → NAT → Wi-Fi) was a hypothesis in the first version of this page; I confirmed it from the host's network configuration on the evening of October 29.
 
 ```mermaid
 flowchart TB
@@ -22,33 +22,36 @@ flowchart TB
             lvm[("local-lvm<br/>LVM-Thin · VM disks")]
             local[("local<br/>directory · ISOs, backups")]
         end
-        br{{"vmbr0 · Linux bridge<br/>no physical port attached"}}
-        kali["VM: Kali<br/>security testing<br/>6 vCPU · 8 GiB · 200 GiB"]
-        dock["VM: cy5001-docker<br/>Debian · intended Docker host<br/>1 vCPU · 1 GiB · 8 GiB"]
+        br{{"vmbr0 · internal Linux bridge<br/>no physical port"}}
+        kali["VM 100: Kali<br/>security testing<br/>VM firewall: isolated"]
+        dock["VM 101: cy5001-docker<br/>Debian 13 · disposable coursework VM<br/>VM firewall: isolated"]
+        nat["NAT + host firewall<br/>dnsmasq DHCP/DNS"]
         wifi["Wi-Fi interface<br/>host's physical uplink"]
     end
-    up(["Upstream network"])
+    up(["Home LAN / Internet"])
+    ov(["Overlay VPN<br/>admin devices only"])
 
     kali -->|virtual disk| lvm
     dock -->|virtual disk| lvm
     kali ---|VirtIO NIC| br
     dock ---|VirtIO NIC| br
-    br -.->|"routing / NAT through host?<br/>UNVERIFIED"| wifi
-    wifi --- up
+    br --> nat --> wifi --- up
+    ov ==>|"management: host + Kali"| host
 ```
 
 ## Components at a glance
 
-| Layer | Snapshot state (Oct 29, 2026) | Status |
+| Layer | State (Oct 29, 2026) | Status |
 |---|---|---|
 | Hardware | Ryzen 7 5700U, 16 logical CPUs, ~15 GiB RAM, one ~512 GB NVMe | Observed |
 | Hypervisor | Proxmox VE 8.4.21 on Debian 12, single standalone node | Observed |
 | Storage | LVM VG `pve`, LVM-Thin pool for VM disks, directory storage for ISOs/backups | Observed |
-| Compute guests | VM 100 `Kali`, VM 101 `cy5001-docker` | Observed (config); guest OS inferred |
+| Compute guests | VM 100 `Kali`; VM 101 `cy5001-docker` (rebuilt, minimal Debian 13) | Verified |
 | Network | Linux bridge `vmbr0` with no physical port; Wi-Fi as the physical uplink | Observed |
-| Guest egress path | Routed or NATed through the host | **Inferred, unverified** |
-| Firewall | Datacenter firewall disabled at the snapshot | Observed (historical) |
-| Backups | None visible at the snapshot | Observed (historical) |
+| Guest egress path | IP forwarding + `MASQUERADE` through Wi-Fi; `dnsmasq` for DHCP/DNS | **Verified** |
+| Firewall | Datacenter firewall enabled (input DROP, management allow-list); per-VM isolation policies | **Verified** (VM 101 rules present; not yet tested from inside the VM) |
+| Remote management | Overlay VPN with an explicit, tested allow-list; SSH key-only | **Verified** |
+| Backups | None verified | Gap |
 
 ## Design decisions and trade-offs
 
@@ -96,14 +99,14 @@ This is fine for learning and coursework. It's not a design I'd run anything imp
 
 ### VM roles
 
-| VM | Role | Observed | Inferred / unknown |
+| VM | Role | Observed / verified | Still unknown |
 |---|---|---|---|
-| 100 `Kali` | Security-testing workstation | 6 vCPU, 8 GiB, 200 GiB, firewall flag off, starts at boot, OS type `Other` | Kali Linux is inferred from the name. Guest release and tooling unknown. |
-| 101 `cy5001-docker` | Docker host for coursework | 1 vCPU (`host`), 1 GiB, 8 GiB, firewall flag on, doesn't start at boot, Debian 13 ISO attached | Installed OS version and Docker state unknown. Whether this is the same machine I used for the Apache project is unconfirmed. |
+| 100 `Kali` | Security-testing workstation | 6 vCPU, 8 GiB, 200 GiB, starts at boot, OS type `Other`. Kernel `7.1.5+kali-amd64` (verified). Firewall flag **on** with an isolation policy since the evening of Oct 29 (it was off at the snapshot). | Installed tooling. |
+| 101 `cy5001-docker` | Disposable Docker host for coursework | **Rebuilt** on the evening of Oct 29: minimal Debian 13, no desktop, kernel `6.12.113+deb13-amd64`, firewall flag on, reached via the host as an SSH jump host. 1 vCPU, 2 GiB, 16 GiB (verified Oct 30). (The snapshot showed the original: 1 vCPU, 1 GiB, 8 GiB.) | Docker not yet installed; firewall rules not yet tested from inside the VM. |
 
 **Trade-offs and observations:**
 
-- **Separate VMs per role.** Keeping security tooling apart from service workloads means a messy test environment doesn't contaminate the Docker host. That separation only holds at the VM level, though, because both share one network bridge (see below).
+- **Separate VMs per role.** Keeping security tooling apart from service workloads means a messy test environment doesn't contaminate the Docker host. Since the evening of October 29, that separation also holds on the network: per-VM firewalls stop the guests from reaching each other, the host, or the home LAN (see below).
 - **Start-at-boot is the opposite of what I'd expect.** The security-testing VM starts automatically and the service VM doesn't. For a lab this may be deliberate, but it's worth reviewing. A testing VM usually doesn't need to run unattended.
 - **Legacy virtual hardware.** Both VMs use SeaBIOS and the i440fx machine type, which are Proxmox defaults. They're broadly compatible. OVMF (UEFI) and q35 are the more modern choice and would be needed for features like Secure Boot or a virtual TPM. Changing this on an existing VM isn't a simple toggle, so I'd consider it for new VMs rather than retrofit it.
 - **No guest agent.** Without the QEMU guest agent, Proxmox can't report guest IPs, shut guests down cleanly, or freeze filesystems for consistent backups. See [roadmap item 7](../roadmap.md#7-enable-the-qemu-guest-agent).
@@ -112,15 +115,21 @@ This is fine for learning and coursework. It's not a design I'd run anything imp
 
 **Observed:** Both VMs attach to `vmbr0`, a Linux bridge with no physical port. It isn't VLAN-aware, and there are no VLANs or SDN zones. The host's physical uplink is a Wi-Fi interface.
 
-**Inferred (unverified):** Standard Wi-Fi client connections generally can't be added to a Linux bridge the way a wired NIC can. So I believe `vmbr0` is an internal network, and the host routes or NATs guest traffic out over Wi-Fi. I haven't confirmed this from the host's network configuration.
+**Verified (evening of October 29):** Standard Wi-Fi client connections generally can't be added to a Linux bridge the way a wired NIC can. As I'd expected, `vmbr0` is an internal network on a private /24. The host has IP forwarding on, `MASQUERADE`s guest traffic out over Wi-Fi, and hands out addresses and DNS with `dnsmasq`.
 
 **Trade-offs:**
 
 - **Wi-Fi is convenient but limited.** It needs no cabling. But it's less stable and slower than wired Ethernet, and it rules out simple bridged networking where guests sit directly on the upstream LAN.
-- **If guests are behind NAT, that's a mild security benefit.** They wouldn't be directly reachable from the upstream network. But I can't count on that until it's verified, and NAT isn't a firewall.
-- **One flat bridge means no segmentation.** The security-testing VM and the service VM share the same layer-2 segment, so nothing at the network level separates them. Separating attack traffic from services is [roadmap item 4](../roadmap.md#4-verify-routingnat-and-segment-the-network).
+- **NAT is a mild security benefit.** Guests aren't directly reachable from the home LAN. But NAT isn't a firewall, and it has a cost: with per-VM firewalls on, NAT needed an extra conntrack-zone rule to work at all ([incident write-up](../hardening/2026-10-29-access-and-network-hardening.md#incident-enabling-the-vm-firewall-broke-internet-access)).
+- **One shared bridge, isolated by per-VM firewalls.** The guests still share a layer-2 segment, but each VM's firewall drops traffic to the host (except DNS), other guests, and every private range. I chose this over a separate bridge or VLAN because it was the smaller change on a single Wi-Fi host. The cost is discipline: every new VM needs its own rules, or it's unfiltered.
 
 More detail is in [networking/overview.md](../networking/overview.md).
+
+### Remote management over an overlay VPN
+
+**Verified:** I manage the host and Kali over an overlay VPN (Tailscale) rather than exposing anything on the home LAN. Access is limited to my admin laptop and tablet by an explicit policy that tests itself on every save. SSH is key-only on both machines.
+
+**Trade-off:** the overlay VPN's firewall chain runs before the Proxmox firewall and accepts all overlay traffic. I found that the original allow-all overlay policy let *any* tailnet device, including Kali, reach the hypervisor's management ports. The overlay policy is now the control that matters for that path, so it has to stay correct.
 
 ### Backup and recovery gap
 
@@ -134,11 +143,13 @@ More detail is in [networking/overview.md](../networking/overview.md).
 
 **It is** a working single-host lab for learning virtualization, Linux administration, containers, and security testing on hardware I control.
 
-**It isn't** production-ready or hardened. At the snapshot:
+**It isn't** production-ready. At the dashboard snapshot earlier on October 29:
 
 - The hypervisor was past end of life.
 - The firewall wasn't enforced.
 - The network wasn't segmented.
 - No backups were visible.
+
+By that evening, the firewall was enforced, the guests were isolated from each other, the host, and the home LAN, and remote access was locked down to an explicit allow-list with key-only SSH ([write-up](../hardening/2026-10-29-access-and-network-hardening.md)). **The end-of-life hypervisor and the lack of tested backups are still open**, and they're the next priorities.
 
 I'm documenting these gaps on purpose. Closing them is the point of the [roadmap](../roadmap.md).

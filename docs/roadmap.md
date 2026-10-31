@@ -2,7 +2,7 @@
 
 These are the improvements I plan to make, ordered by priority. Each one comes from a gap in the [October 29, 2026 inventory](inventory.md).
 
-**Everything on this page is planned work, not completed work.** When I finish an item, I'll mark it done, date it, and link to the write-up.
+Items are planned work unless they're explicitly marked **Done**. Done items are dated and link to their write-up.
 
 Before starting most items, I need to re-check the current state, because the inventory is a snapshot.
 
@@ -10,14 +10,15 @@ Before starting most items, I need to re-check the current state, because the in
 |---|---|---|---|
 | 1 | [Establish backups and test recovery](#1-establish-backups-and-test-recovery) | Critical | Planned |
 | 2 | [Plan a supported Proxmox upgrade](#2-plan-a-supported-proxmox-upgrade) | High | Planned |
-| 3 | [Review firewall policy safely](#3-review-firewall-policy-safely) | High | Planned |
-| 4 | [Verify routing/NAT and segment the network](#4-verify-routingnat-and-segment-the-network) | High | Planned |
-| 5 | [Verify guest OS versions and Docker state](#5-verify-guest-os-versions-and-docker-state) | Medium | Planned |
-| 6 | [Right-size memory for VM 101](#6-right-size-memory-for-vm-101) | Medium | Planned |
+| 3 | [Review firewall policy safely](#3-review-firewall-policy-safely) | High | **Done** (Oct 29, 2026), with follow-ups in item 11 |
+| 4 | [Verify routing/NAT and segment the network](#4-verify-routingnat-and-segment-the-network) | High | **Done** (Oct 29, 2026): NAT verified; guests isolated with per-VM firewalls |
+| 5 | [Verify guest OS versions and Docker state](#5-verify-guest-os-versions-and-docker-state) | Medium | In progress: kernels recorded; Docker not yet installed on the rebuilt VM 101 |
+| 6 | [Right-size memory for VM 101](#6-right-size-memory-for-vm-101) | Medium | Superseded: VM 101 rebuilt with 2 GiB RAM |
 | 7 | [Enable the QEMU guest agent](#7-enable-the-qemu-guest-agent) | Medium | Planned |
 | 8 | [Clean up the attached ISO and stale shell session](#8-clean-up-the-attached-iso-and-stale-shell-session) | Low | Planned |
 | 9 | [Reproducible build for the Apache HTTPS project](#9-reproducible-build-for-the-apache-https-project) | Medium | In progress: written, but build and tests not yet run |
 | 10 | [Monitoring, logging, scanning, and automation](#10-monitoring-logging-scanning-and-automation) | Ongoing | Planned |
+| 11 | [Hardening follow-ups](#11-hardening-follow-ups) | High | Planned |
 
 ---
 
@@ -69,9 +70,18 @@ Before starting most items, I need to re-check the current state, because the in
 
 I'll only publish a summary of the policy here, not the full ruleset.
 
+**Done (October 29, 2026).** Write-up: [access and network hardening](hardening/2026-10-29-access-and-network-hardening.md).
+
+- By the evening session, the datacenter firewall was already enabled with input DROP and a management allow-list containing only my admin laptop.
+- Reading the live ruleset in order showed the overlay VPN's own chain accepting all overlay traffic **before** the Proxmox firewall ran, with an allow-all overlay policy. Every tailnet device, including Kali, could reach the host's management ports. I replaced the overlay policy with an explicit allow-list that tests itself on every save.
+- I enabled per-VM firewalls with default-deny inbound and decided Kali's policy: internet only, no host, no home LAN, no other guests.
+- I tightened SSH on the host (root key-only, explicitly) and on Kali (dedicated key, no passwords, no root).
+
+Remaining work is tracked in [item 11](#11-hardening-follow-ups).
+
 ## 4. Verify routing/NAT and segment the network
 
-**Why:** `vmbr0` has no physical port, and the uplink is Wi-Fi. I believe the host routes or NATs guest traffic, but I haven't confirmed it. Both the security-testing VM and the service VM share that one flat bridge.
+**Why:** `vmbr0` has no physical port, and the uplink is Wi-Fi. I believed the host routed or NATed guest traffic, but hadn't confirmed it. Both the security-testing VM and the service VM shared that one flat bridge.
 
 **Plan:**
 
@@ -79,17 +89,32 @@ I'll only publish a summary of the policy here, not the full ruleset.
 2. Design segmentation, for example a separate bridge or VLAN for attack and testing traffic, so Kali can't reach service VMs by default.
 3. Confirm whether the VPN service on the host is running and what role it plays.
 
+**Done (October 29, 2026).**
+
+1. **Verified:** `vmbr0` is an internal bridge on a private /24. The host has IP forwarding on, `MASQUERADE`s the guest subnet out through Wi-Fi, and runs `dnsmasq` for guest DHCP and DNS. The diagrams now show this as a solid, verified path.
+2. **Segmentation:** I chose per-VM firewall rules on the shared bridge instead of a second bridge. The reasoning is in the [networking overview](networking/overview.md#per-vm-policy). Kali can no longer reach the host, the home LAN, or other guests; this was verified from inside Kali.
+3. **Verified:** the overlay VPN runs on the host and on Kali and is how I manage the lab remotely. Its firewall behaviour was Finding 1 of the hardening write-up.
+
+Enabling the VM firewall initially broke guest internet access. The cause was a known Proxmox issue with NAT and the per-VM firewall bridges, fixed with a conntrack-zone rule. It's very likely what killed the original Docker VM's connectivity. Details are in the [incident section](hardening/2026-10-29-access-and-network-hardening.md#incident-enabling-the-vm-firewall-broke-internet-access).
+
 ## 5. Verify guest OS versions and Docker state
 
 **Why:** The dashboard can't see inside the guests. I need to confirm what's actually installed.
 
 **Plan:** Record the OS release and kernel for each VM. On VM 101, record the Docker Engine version, `docker ps -a`, and the local images. Confirm whether this is the same `cy5001-docker` installation I used for the Apache project.
 
+**Progress (October 29, 2026):**
+
+- **Kali:** kernel `7.1.5+kali-amd64` (from the login banner).
+- **VM 101:** the original VM was destroyed after it lost internet access, so the question of whether it was the Apache project's machine can no longer be answered from the VM itself. The rebuilt VM is a minimal Debian 13 install (no desktop) running kernel `6.12.113+deb13-amd64`. Docker isn't installed on it yet.
+
 ## 6. Right-size memory for VM 101
 
 **Why:** 1 GiB of RAM was ~88% used at the snapshot. Docker workloads on that little memory risk OOM kills and swapping.
 
 **Plan:** Watch memory usage inside the guest under a typical workload, then raise the allocation (probably to 2 GiB) or enable ballooning. The host has headroom: ~9 of ~15 GiB was assigned at the snapshot.
+
+**Superseded (October 29, 2026):** VM 101 was destroyed and rebuilt as a disposable coursework VM. The rebuild has 1 vCPU, 2 GiB of RAM and a 16 GiB disk (verified on the host on October 30, 2026).
 
 ## 7. Enable the QEMU guest agent
 
@@ -102,6 +127,8 @@ I'll only publish a summary of the policy here, not the full ruleset.
 **Why:** At the snapshot, VM 101 still had its Debian 13 installer ISO attached, and a web shell session from October 13, 2026 still showed as running in the task log.
 
 **Plan:** Detach the ISO once I've confirmed the VM boots from disk. Look into the shell task. If it's stale, close it deliberately rather than leaving an open session.
+
+**Note (October 29, 2026):** The rebuilt VM 101 was installed from the same Debian 13 netinst ISO and now boots from disk. I still need to check whether the ISO is still attached, and look into the stale shell task.
 
 ## 9. Reproducible build for the Apache HTTPS project
 
@@ -119,3 +146,19 @@ These are longer-term additions that will come after the basics above:
 - **Logging:** centralized logs from the host and guests.
 - **Vulnerability scanning:** scan container images and guests. Only my own systems, from inside the lab.
 - **Automation:** capture VM and service configuration as code (for example Ansible, or Terraform with a Proxmox provider) so I can rebuild the lab from this repository.
+
+## 11. Hardening follow-ups
+
+**Why:** These are loose ends from the [October 29 hardening session](hardening/2026-10-29-access-and-network-hardening.md#follow-ups). Most are small, but the reboot test proves that the network fixes survive a power cut.
+
+**Plan:**
+
+1. **Reboot the host** and confirm guests regain internet access. This proves the persisted NAT and conntrack-zone rules come back on boot.
+2. **Test VM 101's firewall rules** from inside the VM (the rules file was confirmed on the host on October 30): internet works; the host (except SSH from it), the home LAN, and Kali are unreachable.
+3. **Disable `rpcbind`** on the host. It listened on all interfaces; the firewall blocked it, but nothing uses it.
+4. **Remove the stale overlay record** left behind by the destroyed Docker VM.
+5. **Enable firewall drop logging** on the host so refused traffic is visible.
+6. **Consider making the Proxmox firewall filter overlay traffic** (`nodivert` mode) for defence in depth. Only with local console access ready.
+7. **When VM 101 is retired,** destroy it *and* delete its firewall file, so stale rules don't apply to the next VM that reuses the ID.
+
+**Done when:** items 1–5 are complete and recorded, and a decision on item 6 is written down.

@@ -1,107 +1,137 @@
 # Networking Overview
 
-This page covers the lab network at a high level. It's based on the **October 29, 2026 inventory snapshot** ([inventory.md](../inventory.md#5-networking)).
+This page covers the lab network at a high level. It started from the **October 29, 2026 dashboard snapshot** ([inventory.md](../inventory.md#5-networking)). On the evening of the same day, I read the host's actual network and firewall configuration and hardened it. The details of that session are in the [access and network hardening write-up](../hardening/2026-10-29-access-and-network-hardening.md).
 
-**Case study:** [Proxmox on Wi-Fi, NAT, the VM firewall, and conntrack zones](proxmox-wifi-nat-firewall-conntrack.md). It documents the host's verified NAT configuration, why enabling the per-VM firewall broke guest internet access, the conntrack-zone fix, and a troubleshooting runbook.
+**Case study:** [Proxmox on Wi-Fi, NAT, the VM firewall, and conntrack zones](proxmox-wifi-nat-firewall-conntrack.md). It explains why the guests are NATed rather than bridged, why enabling the per-VM firewall broke guest internet access, how a conntrack-zone rule fixed it, and a troubleshooting runbook.
+
+Labels used below:
+
+- **Verified:** confirmed from command output on the host or in a guest on October 29, 2026.
+- **Snapshot:** shown in the Proxmox dashboard earlier that day, and since superseded.
+- **Pending:** planned or started, but not yet confirmed.
 
 For a public repository, I deliberately leave out:
 
 - IP addresses and subnets, except the internal guest network (`10.10.10.0/24`, gateway `10.10.10.1`), which is documented in the [case study](proxmox-wifi-nat-firewall-conntrack.md)
-- VPN or overlay addresses
+- VPN or overlay addresses, device names, and the tailnet name
 - MAC addresses
 - interface hardware details
-- firewall rulesets
-- management access instructions
+- literal firewall rulesets (I publish policy summaries instead)
+- step-by-step management access instructions
 
 ## Network view
 
-The labels match the [architecture overview](../architecture/overview.md#topology). Solid lines were observed in the Proxmox configuration. **The dashed line is unverified.**
-
 ```mermaid
 flowchart LR
-    kali["VM: Kali<br/>security testing"]
-    dock["VM: cy5001-docker<br/>Debian · intended Docker host"]
-    br{{"vmbr0 · Linux bridge<br/>no physical port attached"}}
-    wifi["Wi-Fi interface<br/>host's physical uplink"]
-    up(["Upstream network"])
+    subgraph host["Proxmox VE host"]
+        kali["VM 100: Kali<br/>security testing<br/>VM firewall ON<br/>no access to host, LAN, other guests"]
+        dock["VM 101: cy5001-docker<br/>Debian 13 · disposable<br/>VM firewall ON"]
+        br{{"vmbr0 · internal Linux bridge<br/>private /24 · no physical port"}}
+        svc["dnsmasq on the host<br/>guest DHCP + DNS"]
+        nat["NAT · MASQUERADE<br/>+ conntrack zone for fwbr+"]
+        wifi["Wi-Fi interface<br/>host's physical uplink"]
+        ts["Overlay VPN (Tailscale)<br/>on host + Kali"]
+    end
+    lan(["Home LAN + Internet"])
+    admin(["Admin laptop / tablet"])
 
     kali ---|VirtIO NIC| br
     dock ---|VirtIO NIC| br
-    br -.->|"routing / NAT through host?<br/>UNVERIFIED"| wifi
-    wifi --- up
+    br --- svc
+    br --> nat --> wifi --- lan
+    admin ==>|"SSH, web UI only<br/>overlay allow-list"| ts
 ```
 
-## What I observed
+## Addressing and egress (verified)
 
-| Item | Snapshot state (Oct 29, 2026) |
+| Item | Verified state (Oct 29, 2026) |
 |---|---|
-| Bridge | `vmbr0`, Linux bridge, active, autostart |
-| Bridge ports | None listed |
-| VLAN-aware | No |
-| VLAN interfaces | None |
-| SDN zones / VNets | None (built-in `localnetwork` present, status OK) |
-| Physical uplink | One Wi-Fi interface, active, autostart |
-| Guest NICs | VM 100 and VM 101 each have a VirtIO NIC on `vmbr0` |
+| Bridge | `vmbr0`, static address on a private /24, `bridge-ports none`, not VLAN-aware |
+| Physical uplink | One Wi-Fi interface, DHCP from the home router |
+| IP forwarding | Enabled by a `post-up` hook on `vmbr0` |
+| NAT | `MASQUERADE` for the guest subnet out through the Wi-Fi interface |
+| Conntrack zone | Traffic from Proxmox firewall bridges (`fwbr+`) placed in its own conntrack zone, so NAT works with VM firewalls on ([why](proxmox-wifi-nat-firewall-conntrack.md#9-root-cause-analysis)) |
+| Guest DHCP and DNS | `dnsmasq` on the host, bound to the bridge |
+| Guest attachments | VM 100 and VM 101 each have a VirtIO NIC on `vmbr0` with the firewall flag on |
+| VLANs / SDN | None |
 
-## What I've inferred but not verified
+**Why it's built this way:** a Wi-Fi interface in client mode generally can't be added to a Linux bridge the way a wired NIC can, because the access point only expects frames from the client's own address. So instead of bridging guests onto the home LAN, the host keeps them on an internal network and NATs them out. My earlier diagrams showed this as an unverified hypothesis; it's now confirmed from the host's configuration.
 
-### Guest egress path
+The NAT and conntrack rules are applied by `post-up` / `post-down` hooks on `vmbr0`, so they should come back on boot. **Pending:** a deliberate reboot to prove that end to end.
 
-> **Update (October 29, 2026):** the host's network configuration has since been inspected. Guests are routed and NATed (`MASQUERADE`) out through the Wi-Fi interface, as hypothesised below. See the [case study](proxmox-wifi-nat-firewall-conntrack.md#4-private-subnet-gateway-nat-and-dns). The text below is kept as originally written.
+## Management access (summary)
 
-`vmbr0` has no physical port, and the host's physical uplink is Wi-Fi.
+| Path | Policy |
+|---|---|
+| Overlay VPN → host | Only my admin laptop and tablet, only SSH, web UI, and SPICE proxy. Enforced by the overlay's access policy, which has built-in tests. |
+| Overlay VPN → Kali | Only my admin laptop and tablet, only SSH and RDP. |
+| Overlay VPN, any other combination | Denied. Kali and the host can't open connections to other overlay devices. |
+| Home LAN → host | Management ports dropped by the Proxmox firewall. |
+| IPv6 → host | Dropped by the Proxmox firewall (it mirrors the IPv4 rules). |
+| Guests → host | DNS (and DHCP) only. |
+| VM 101 | No overlay VPN. Reached with SSH through the host as a jump host. |
 
-On Linux, a Wi-Fi interface in normal client mode generally can't be added to a bridge the way a wired NIC can. The access point only expects frames from the client's own address.
+SSH is key-only everywhere: root on the host can't log in with a password, and Kali has its own dedicated key with passwords disabled.
 
-So my working hypothesis is:
+**Known limitation:** the overlay VPN inserts a firewall chain on the host that accepts all overlay traffic *before* the Proxmox firewall evaluates it. So overlay access is controlled by the overlay policy, not by the host firewall. I've accepted that for now; the reasoning and the option to change it are in the [hardening write-up](../hardening/2026-10-29-access-and-network-hardening.md#residual-risk).
 
-- `vmbr0` is an internal network.
-- The host gives guests outbound connectivity by routing and/or NATing their traffic through the Wi-Fi interface.
+## Firewall (verified October 29, 2026)
 
-**This is unverified.** The dashboard doesn't show IP forwarding, NAT rules, or the bridge's addressing. Other explanations are possible, for example that guests have no outbound connectivity at all, or that something else is configured. I'll confirm it by reading the host's network and packet-filtering configuration. That's read-only, and it's [roadmap item 4](../roadmap.md#4-verify-routingnat-and-segment-the-network).
+### Host
 
-Until then, the diagrams show this link as dashed.
+| Item | State |
+|---|---|
+| Datacenter firewall | Enabled |
+| Default policies | Input DROP, output ACCEPT |
+| Allowed inbound | Management ports from an allow-list containing only my admin laptop; the overlay VPN's UDP port; DNS and DHCP from the guest bridge |
+| Everything else inbound | Dropped |
 
-### Management access
+> The dashboard snapshot earlier on October 29 showed the datacenter firewall **disabled**. By the evening session it was enabled. I don't have a record of exactly when it changed.
 
-I reached the Proxmox web UI over a private VPN overlay, and that VPN's package repository is configured on the host. That points to VPN-based remote management. But I haven't verified from the host whether the service is running, or whether it does anything beyond giving the host itself a reachable address.
+### Per-VM policy
 
-I'm not documenting how management access works in this public repository.
+Both VMs follow the same isolation pattern. The literal rules stay out of this repository.
 
-## Unknown
+| | VM 100 `Kali` | VM 101 `cy5001-docker` |
+|---|---|---|
+| Firewall flag | On (verified) | On (verified) |
+| Inbound default | DROP | DROP |
+| Inbound allowed | Overlay VPN UDP; ICMP from the host | SSH from the host only (jump host) |
+| Outbound to the host | DNS only | DNS only |
+| Outbound to other guests | Blocked | Blocked |
+| Outbound to home LAN / private ranges | Blocked (except overlay VPN UDP to LAN peers) | Blocked |
+| Outbound to the internet | Allowed | Allowed |
+| Status | **Verified** by tests from inside the VM | Rules **verified present** on the host (Oct 30); not yet tested from inside the VM |
 
-- **Guest addressing and services.** Proxmox can't report them because the QEMU guest agent isn't configured on either VM.
-- **Which ports, if any, are reachable from outside the host.** This depends on the unverified routing/NAT setup and on firewall state.
-- **The upstream network itself.** Its trust level and other devices are outside the scope of this inventory.
+**Segmentation decision:** I isolate guests with per-VM firewall rules on the shared bridge instead of creating a second bridge or VLAN. Both approaches stop Kali from reaching the service VM. Per-VM rules were the smaller change on a single Wi-Fi host, didn't need new NAT rules, and are easy to audit per VM. A separate bridge would add a second layer (routing between segments) and is still an option if the lab grows.
 
-## Firewall (observed October 29, 2026; not verified as current)
+## Verification (October 29, 2026)
 
-At the snapshot:
+Tested from inside the Kali VM after the changes:
 
-- **The datacenter firewall was disabled.** Its default policies were input DROP, output ACCEPT, and forward ACCEPT. Those policies weren't being enforced, because the firewall itself was off.
-- **No rules were defined** at datacenter or node level.
-- **VM firewall flags were mixed.** VM 100 (Kali) was off and VM 101 (Docker) was on. In Proxmox, a VM's firewall flag has no effect while the datacenter firewall is disabled, so I don't expect any Proxmox-level filtering was in effect for either VM. I haven't verified that.
-
-I haven't re-checked these settings since the snapshot. They describe that date only.
-
-There may be other filtering in place, such as host packet-filter rules outside the Proxmox firewall (for example, if NAT is configured) or firewalls inside the guests. The dashboard didn't show any of that, so it's unknown, not absent.
+| Test | Result |
+|---|---|
+| HTTPS to a public website | `HTTP/2 200` ✅ |
+| Host web UI via the bridge | Timed out ✅ |
+| Home router | Unreachable ✅ |
+| Host web UI via the overlay network | Timed out ✅ |
 
 ## Trade-offs
 
 | Decision | Benefit | Cost |
 |---|---|---|
-| Wi-Fi as the uplink | No cabling; uses the laptop's built-in NIC | Less stable and slower than wired; rules out simple bridging of guests onto the upstream LAN |
-| Internal bridge with no physical port | Guests aren't directly on the upstream network (if traffic is NATed, which is unverified) | Needs host-side routing/NAT to work; adds a layer to troubleshoot |
-| One shared bridge for all VMs | Simple; nothing extra to configure | No separation between the security-testing VM and the service VM |
-| Proxmox firewall not enabled (at snapshot) | Can't lock myself out by accident | No Proxmox-level filtering between guests, or between guests and host |
+| Wi-Fi as the uplink | No cabling; uses the laptop's built-in NIC | Less stable and slower than wired; rules out bridging guests onto the home LAN |
+| Internal bridge + NAT | Guests aren't directly reachable from the home LAN | Needs host-side forwarding, NAT, and the conntrack-zone fix; one more layer to troubleshoot |
+| Per-VM firewalls on one bridge | Real isolation between guests, host, and LAN without a second network | Every new VM needs its own rules file; forgetting it leaves that VM unfiltered |
+| Overlay VPN for management | No management ports exposed to the home LAN or the internet | Its firewall chain bypasses the Proxmox firewall, so the overlay policy has to be right |
+| Jump host for the disposable VM | No overlay enrolment or policy change; nothing to clean up afterwards | Depends on the host being reachable; one extra hop |
 
-The shared bridge is the trade-off that matters most for a security lab. Kali is a machine I use to run offensive tools, and it sits on the same segment as a service VM with nothing filtering between them. For deliberate testing against my own service that's convenient. But it also means a mistake or misconfiguration on the testing VM isn't contained.
+## Still to do
 
-## Planned improvements
+Details are in the [roadmap](../roadmap.md).
 
-These are plans, not completed work. Details are in the [roadmap](../roadmap.md).
-
-1. **Verify the egress path.** Read the host's network configuration and update the diagrams. The dashed edge becomes solid only once it's confirmed.
-2. **Segment the network.** Give security-testing traffic its own bridge or VLAN so it can't reach service VMs by default, and decide how the host routes between segments.
-3. **Enable the firewall safely.** Define allow rules for the management paths I need first. Test with a local console available as a fallback. Then enable the datacenter firewall, then the node firewall, then per-VM firewalls ([roadmap item 3](../roadmap.md#3-review-firewall-policy-safely)). I'll publish a summary of the policy, not the ruleset.
-4. **Enable the guest agent** so guest addresses are visible to Proxmox ([roadmap item 7](../roadmap.md#7-enable-the-qemu-guest-agent)).
+1. **Reboot test.** Confirm guests regain internet after a host reboot.
+2. **Test VM 101's firewall rules** from inside the VM (the rules file is confirmed on the host).
+3. **Firewall logging.** Turn on drop logging so I can see what's being refused.
+4. **Optional:** make the Proxmox firewall filter overlay traffic too, with local console access ready.
+5. **Enable the guest agent** so guest addresses are visible to Proxmox ([roadmap item 7](../roadmap.md#7-enable-the-qemu-guest-agent)).

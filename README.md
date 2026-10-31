@@ -2,7 +2,7 @@
 
 This is the working record of my personal cybersecurity homelab: what I've built, how it's configured, what I've tested, and what I still need to fix.
 
-I run the lab on a repurposed laptop running Proxmox VE. It has two virtual machines: a Kali Linux VM for security work and a Debian VM I set up as a Docker host. I use it to practise the skills I care about most: Linux administration, secure configuration, containerization, network security, and troubleshooting. I want to practise them on infrastructure I'm responsible for, not just read about them.
+I run the lab on a repurposed laptop running Proxmox VE. It has two virtual machines: a Kali Linux VM for security work and a disposable Debian VM I use as a Docker host for coursework. I use it to practise the skills I care about most: Linux administration, secure configuration, containerization, network security, and troubleshooting. I want to practise them on infrastructure I'm responsible for, not just read about them.
 
 This repository is meant to grow with the lab. I've tried to be explicit about what I've verified, what I'm inferring, and what is still a plan.
 
@@ -19,14 +19,15 @@ This repository is meant to grow with the lab. I've tried to be explicit about w
 |---|---|
 | Virtualization | Proxmox VE 8.4 (KVM/QEMU), single standalone node |
 | Storage | LVM and LVM-Thin on a single NVMe SSD |
-| Networking | Linux bridge (`vmbr0`) and a Wi-Fi uplink on the host |
+| Networking | Internal Linux bridge (`vmbr0`), NAT over the host's Wi-Fi uplink, `dnsmasq` for guest DHCP/DNS |
+| Security controls | Proxmox firewall (datacenter + per-VM), `iptables` / conntrack, Tailscale access policies, OpenSSH key-only auth |
 | Guest operating systems | Kali Linux (security testing), Debian (Docker host) |
 | Containers | Docker Engine, Docker Hub |
 | Web / TLS | Apache HTTP Server (`httpd` image), OpenSSL, `mod_ssl` |
 
 ## Architecture overview
 
-This is a sanitized, high-level view based on my inventory snapshot of **October 29, 2026**. Solid lines are relationships I observed in the Proxmox configuration. The **dashed line is unverified**: the bridge has no physical port, so I believe guest traffic is routed or NATed through the host's Wi-Fi interface, but I haven't confirmed that from the host's network configuration yet.
+This is a sanitized, high-level view as of **October 29, 2026**: the dashboard inventory from earlier that day, plus what I verified on the host that evening. Every line in the diagram is verified, including the guest egress path, which earlier versions showed as an unconfirmed hypothesis.
 
 ```mermaid
 flowchart TB
@@ -36,19 +37,21 @@ flowchart TB
             lvm[("local-lvm<br/>LVM-Thin · VM disks")]
             local[("local<br/>directory · ISOs, backups")]
         end
-        br{{"vmbr0 · Linux bridge<br/>no physical port attached"}}
-        kali["VM: Kali<br/>security testing<br/>6 vCPU · 8 GiB · 200 GiB"]
-        dock["VM: cy5001-docker<br/>Debian · intended Docker host<br/>1 vCPU · 1 GiB · 8 GiB"]
+        br{{"vmbr0 · internal Linux bridge<br/>no physical port"}}
+        kali["VM 100: Kali<br/>security testing<br/>VM firewall: isolated"]
+        dock["VM 101: cy5001-docker<br/>Debian 13 · disposable coursework VM<br/>VM firewall: isolated"]
+        nat["NAT + host firewall<br/>dnsmasq DHCP/DNS"]
         wifi["Wi-Fi interface<br/>host's physical uplink"]
     end
-    up(["Upstream network"])
+    up(["Home LAN / Internet"])
+    ov(["Overlay VPN<br/>admin devices only"])
 
     kali -->|virtual disk| lvm
     dock -->|virtual disk| lvm
     kali ---|VirtIO NIC| br
     dock ---|VirtIO NIC| br
-    br -.->|"routing / NAT through host?<br/>UNVERIFIED"| wifi
-    wifi --- up
+    br --> nat --> wifi --- up
+    ov ==>|"management: host + Kali"| host
 ```
 
 I've intentionally left out IP addressing, management access details, and hardware identifiers. The full walkthrough, including the trade-offs behind each choice, is in the [architecture overview](docs/architecture/overview.md).
@@ -58,27 +61,30 @@ I've intentionally left out IP addressing, management access details, and hardwa
 | Project | Status | Summary |
 |---|---|---|
 | Proxmox host inventory | Documented | Read-only inventory of the hypervisor, VMs, storage, and networking: [docs/inventory.md](docs/inventory.md) |
-| Proxmox host configuration | Documented | Host, compute, storage, VM, and backup configuration, with the reasoning behind each: [infrastructure/proxmox](infrastructure/proxmox/README.md) |
+| Proxmox host configuration | Documented | Host, compute, storage, VM, firewall, and backup configuration, with the reasoning behind each: [infrastructure/proxmox](infrastructure/proxmox/README.md) |
+| [Access and network hardening](docs/hardening/2026-10-29-access-and-network-hardening.md) | Completed Oct 29, 2026 (a few follow-ups open) | Found that the overlay VPN bypassed the Proxmox firewall and that Kali could reach my home LAN. Locked down remote access, isolated the VMs, made SSH key-only, and debugged a NAT/firewall conntrack issue that broke guest internet access along the way. |
 | [Dockerized Apache with HTTPS](projects/apache-https/README.md) | Original completed (educational); reproducible build written, but build and tests not yet run | Apache in Docker with a custom page, a self-signed RSA certificate, and `mod_ssl`. Verified over HTTP and HTTPS, then published as [`hailmogambo9/contapache:2.0`](https://hub.docker.com/r/hailmogambo9/contapache). The case study covers what ended up inside that `docker commit` image and a reproducible, non-root Dockerfile rebuild. |
 
 ## What the lab can do today
 
-- Run isolated Kali and Debian VMs on a single Proxmox host.
-- Host Docker workloads on the Debian VM. I've run and published an HTTPS-enabled Apache container from it.
+- Run Kali and Debian VMs on a single Proxmox host, each isolated by its own firewall: internet access, but no path to the host, my home LAN, or each other.
+- Manage everything remotely over an overlay VPN restricted to my own devices, with key-only SSH and nothing exposed on the home LAN.
+- Spin up disposable Docker VMs for coursework. I've run and published an HTTPS-enabled Apache container from the earlier Docker VM.
 - Thin-provision VM storage with plenty of headroom. At the snapshot the thin pool was about 26% used and not overcommitted.
 
 ## Known limitations
 
-These are the gaps I observed in the **October 29, 2026 snapshot**. I haven't re-verified them as current conditions. They drive the [roadmap](docs/roadmap.md).
+These are the open gaps as of **October 29, 2026**. They drive the [roadmap](docs/roadmap.md).
 
-- **No visible backups or snapshots.** No backup jobs, archives, or VM snapshots were configured, and there was no off-host backup target.
+- **No tested backups.** The dashboard showed no backup jobs, archives, snapshots, or off-host target. A Kali backup exists on an external drive, but until I've test-restored it, I don't count it.
 - **Single point of failure.** The host OS and every VM disk sit on one NVMe drive.
-- **End-of-life hypervisor.** Proxmox VE 8 reached end of life in August 2026 according to the official Proxmox FAQ. The host still runs 8.4.
-- **Firewall not enforced.** The datacenter-level firewall was disabled and no rules were defined.
-- **No segmentation.** The security-testing VM and the service VM share one flat bridge.
+- **End-of-life hypervisor.** Proxmox VE 8 reached end of life in August 2026 according to the official Proxmox FAQ. The host still runs 8.4, and I won't upgrade until backups are tested.
+- **Overlay traffic bypasses the host firewall.** The overlay VPN's own firewall chain runs first, so its access policy is the only control on that path. The policy is now an explicit, tested allow-list, but it's a single layer.
+- **Some hardening not yet re-verified.** The persisted network rules haven't been through a reboot yet, and the rebuilt Docker VM's firewall rules are in place but haven't been tested from inside the VM yet.
 - **Limited guest visibility.** The QEMU guest agent isn't configured, so Proxmox can't report guest IPs or OS details.
-- **Tight memory on the Docker VM.** 1 GiB with about 88% in use at the snapshot.
-- **Wi-Fi uplink.** This is a laptop, so the only physical uplink I observed is wireless. That shapes how bridging and routing can work.
+- **Wi-Fi uplink.** This is a laptop, so the only physical uplink is wireless. Guests have to be NATed rather than bridged onto the home LAN.
+
+Fixed on October 29, 2026: the firewall is now enforced, the guests are segmented, and remote access and SSH are locked down. See the [hardening write-up](docs/hardening/2026-10-29-access-and-network-hardening.md).
 
 ## Roadmap
 
@@ -86,25 +92,27 @@ In priority order, summarized from [docs/roadmap.md](docs/roadmap.md):
 
 1. Establish reliable backups and test a restore.
 2. Plan a supported upgrade path off Proxmox VE 8.
-3. Review firewall policy without locking myself out.
-4. Verify routing/NAT and segment security-testing VMs from service VMs.
-5. Verify guest OS versions and Docker state.
-6. Right-size memory for the Docker VM.
+3. ~~Review firewall policy without locking myself out.~~ Done Oct 29, 2026.
+4. ~~Verify routing/NAT and segment security-testing VMs from service VMs.~~ Done Oct 29, 2026.
+5. Verify guest OS versions and Docker state (in progress).
+6. ~~Right-size memory for the Docker VM.~~ Superseded by the rebuild.
 7. Enable the QEMU guest agent where appropriate.
 8. Clean up the attached installer ISO and a stale shell session.
 9. Rebuild the Apache project as a reproducible Dockerfile.
 10. Add monitoring, logging, vulnerability scanning, and automation over time.
+11. Finish the hardening follow-ups: reboot test, testing VM 101's rules from inside, unused services, drop logging.
 
 ## Documentation
 
 - [docs/inventory.md](docs/inventory.md): hardware, hypervisor, VM, storage, and network inventory (October 29, 2026 snapshot)
 - [docs/architecture/overview.md](docs/architecture/overview.md): topology diagram and design trade-offs
-- [docs/networking/overview.md](docs/networking/overview.md): bridge and uplink, the unverified egress path, firewall state at the snapshot, and segmentation plans
+- [docs/networking/overview.md](docs/networking/overview.md): bridge, NAT and uplink, management access summary, host and per-VM firewall policy, and segmentation decision
 - [docs/networking/proxmox-wifi-nat-firewall-conntrack.md](docs/networking/proxmox-wifi-nat-firewall-conntrack.md): case study on Wi-Fi NAT, the per-VM firewall, conntrack zones, and a troubleshooting runbook
+- [docs/hardening/2026-10-29-access-and-network-hardening.md](docs/hardening/2026-10-29-access-and-network-hardening.md): findings, fixes, the NAT/conntrack incident, verification results, and lessons learned
 - [infrastructure/proxmox/README.md](infrastructure/proxmox/README.md): Proxmox host configuration, storage layout, VMs, and backup and recovery
 - [projects/apache-https/README.md](projects/apache-https/README.md): Dockerized Apache HTTPS case study and reproducible build
 - [docs/roadmap.md](docs/roadmap.md): prioritized improvements and the reasoning behind each one
 
 ## A note on what's published here
 
-This is a public repository, so I keep it sanitized. It contains no private or overlay-VPN IP addresses (other than the internal guest network `10.10.10.0/24`, which is documented deliberately), no MAC addresses, serial numbers, credentials, private keys, or step-by-step management access details. Where something is a historical observation rather than current state, I say so.
+This is a public repository, so I keep it sanitized. It contains no private or overlay-VPN IP addresses or subnets (other than the internal guest network `10.10.10.0/24`, which is documented deliberately), no MAC addresses, personal device names, serial numbers, credentials, private keys, literal firewall rulesets, or step-by-step management access details. Firewall and access policies are published as summaries of intent. Where something is a historical observation rather than current state, I say so.
